@@ -1340,6 +1340,7 @@ atomicity
 auth
 authenticator
 authenticators
+authUser
 autocompletion
 autodetect
 autodetected
