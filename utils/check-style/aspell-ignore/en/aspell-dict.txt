@@ -1,4 +1,4 @@
-personal_ws-1.1 en 2985
+personal_ws-1.1 en 3156 
 AArch
 ACLs
 ALTERs
@@ -1043,6 +1043,7 @@ TINYINT
 TLSv
 TMAX
 TMIN
+TOTP
 TPCH
 TSDB
 TSVRaw
@@ -1131,7 +1132,6 @@ URLEncode
 URLHash
 URLHierarchy
 URLPathHierarchy
-USearch
 USearch
 UTCTimestamp
 UUIDNumToString
@@ -2514,6 +2514,7 @@ punycodeEncode
 pushdown
 pwrite
 py
+qrencode
 qryn
 quantile
 quantileBFloat
@@ -3027,6 +3028,7 @@ topLevelDomain
 topLevelDomainRFC
 topk
 topkweighted
+totp
 tpcds
 tpch
 transactionID
