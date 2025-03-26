@@ -6,17 +6,17 @@
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnObjectDeprecated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnStringHelpers.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnVariant.h>
-#include <Columns/ColumnDynamic.h>
 #include <Columns/ColumnsCommon.h>
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeFixedString.h>
@@ -38,16 +39,15 @@
 #include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeObjectDeprecated.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/ObjectUtils.h>
 #include <DataTypes/Serializations/SerializationDecimal.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -75,9 +75,10 @@
 #include <Common/quoteString.h>
 
 #if USE_EMBEDDED_COMPILER
-#    include "DataTypes/Native.h"
+#    include <DataTypes/Native.h>
 #endif
 
+#include "ConvertImpl.h"
 
 namespace DB
 {
@@ -89,8 +90,6 @@ namespace Setting
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsBool input_format_ipv4_default_on_conversion_error;
     extern const SettingsBool input_format_ipv6_default_on_conversion_error;
-    extern const SettingsBool precise_float_parsing;
-    extern const SettingsBool date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands;
 }
 
 namespace ErrorCodes
@@ -103,7 +102,6 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_DATE;
     extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_UUID;
     extern const int CANNOT_PARSE_IPV4;
     extern const int CANNOT_PARSE_IPV6;
@@ -113,10 +111,9 @@ namespace ErrorCodes
     extern const int CANNOT_CONVERT_TYPE;
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
-    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace detail
@@ -158,367 +155,6 @@ bool castBothTypes(const IDataType * left, const IDataType * right, F && f)
     return castType(left, [&](const auto & left_) { return castType(right, [&](const auto & right_) { return f(left_, right_); }); });
 }
 #endif
-
-/** Type conversion functions.
-  * toType - conversion in "natural way";
-  */
-
-UInt32 extractToDecimalScale(const ColumnWithTypeAndName & named_column);
-
-
-ColumnUInt8::MutablePtr copyNullMap(ColumnPtr col);
-
-
-
-
-enum class ConvertFromStringExceptionMode : uint8_t
-{
-    Throw,  /// Throw exception if value cannot be parsed.
-    Zero,   /// Fill with zero or default if value cannot be parsed.
-    Null    /// Return ColumnNullable with NULLs when value cannot be parsed.
-};
-
-enum class ConvertFromStringParsingMode : uint8_t
-{
-    Normal,
-    BestEffort,  /// Only applicable for DateTime. Will use sophisticated method, that is slower.
-    BestEffortUS
-};
-
-struct AccurateConvertStrategyAdditions
-{
-    UInt32 scale { 0 };
-};
-
-struct AccurateOrNullConvertStrategyAdditions
-{
-    UInt32 scale { 0 };
-};
-
-template <typename FromDataType, typename ToDataType, typename Name,
-    ConvertFromStringExceptionMode exception_mode, ConvertFromStringParsingMode parsing_mode>
-struct ConvertThroughParsing
-{
-    static_assert(std::is_same_v<FromDataType, DataTypeString> || std::is_same_v<FromDataType, DataTypeFixedString>,
-        "ConvertThroughParsing is only applicable for String or FixedString data types");
-
-    static constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
-
-    static bool isAllRead(ReadBuffer & in)
-    {
-        /// In case of FixedString, skip zero bytes at end.
-        if constexpr (std::is_same_v<FromDataType, DataTypeFixedString>)
-            while (!in.eof() && *in.position() == 0)
-                ++in.position();
-
-        if (in.eof())
-            return true;
-
-        /// Special case, that allows to parse string with DateTime or DateTime64 as Date or Date32.
-        if constexpr (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
-        {
-            if (!in.eof() && (*in.position() == ' ' || *in.position() == 'T'))
-            {
-                if (in.buffer().size() == strlen("YYYY-MM-DD hh:mm:ss"))
-                    return true;
-
-                if (in.buffer().size() >= strlen("YYYY-MM-DD hh:mm:ss.x")
-                    && in.buffer().begin()[19] == '.')
-                {
-                    in.position() = in.buffer().begin() + 20;
-
-                    while (!in.eof() && isNumericASCII(*in.position()))
-                        ++in.position();
-
-                    if (in.eof())
-                        return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    template <typename Additions = void *>
-    static ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & res_type, size_t input_rows_count,
-                        Additions additions [[maybe_unused]] = Additions())
-    {
-        using ColVecTo = typename ToDataType::ColumnType;
-
-        const DateLUTImpl * local_time_zone [[maybe_unused]] = nullptr;
-        const DateLUTImpl * utc_time_zone [[maybe_unused]] = nullptr;
-
-        /// For conversion to Date or DateTime type, second argument with time zone could be specified.
-        if constexpr (std::is_same_v<ToDataType, DataTypeDateTime> || to_datetime64)
-        {
-            const auto result_type = removeNullable(res_type);
-            // Time zone is already figured out during result type resolution, no need to do it here.
-            if (const auto dt_col = checkAndGetDataType<ToDataType>(result_type.get()))
-                local_time_zone = &dt_col->getTimeZone();
-            else
-                local_time_zone = &extractTimeZoneFromFunctionArguments(arguments, 1, 0);
-
-            if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort || parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
-                utc_time_zone = &DateLUT::instance("UTC");
-        }
-        else if constexpr (std::is_same_v<ToDataType, DataTypeDate> || std::is_same_v<ToDataType, DataTypeDate32>)
-        {
-            // Timezone is more or less dummy when parsing Date/Date32 from string.
-            local_time_zone = &DateLUT::instance();
-            utc_time_zone = &DateLUT::instance("UTC");
-        }
-
-        const IColumn * col_from = arguments[0].column.get();
-        const ColumnString * col_from_string = checkAndGetColumn<ColumnString>(col_from);
-        const ColumnFixedString * col_from_fixed_string = checkAndGetColumn<ColumnFixedString>(col_from);
-
-        if (std::is_same_v<FromDataType, DataTypeString> && !col_from_string)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                col_from->getName(), Name::name);
-
-        if (std::is_same_v<FromDataType, DataTypeFixedString> && !col_from_fixed_string)
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
-                col_from->getName(), Name::name);
-
-        size_t size = input_rows_count;
-        typename ColVecTo::MutablePtr col_to = nullptr;
-
-        if constexpr (IsDataTypeDecimal<ToDataType>)
-        {
-            UInt32 scale = additions;
-            if constexpr (to_datetime64)
-            {
-                ToDataType check_bounds_in_ctor(scale, local_time_zone ? local_time_zone->getTimeZone() : String{});
-            }
-            else
-            {
-                ToDataType check_bounds_in_ctor(ToDataType::maxPrecision(), scale);
-            }
-            col_to = ColVecTo::create(size, scale);
-        }
-        else
-            col_to = ColVecTo::create(size);
-
-        typename ColVecTo::Container & vec_to = col_to->getData();
-
-        ColumnUInt8::MutablePtr col_null_map_to;
-        ColumnUInt8::Container * vec_null_map_to [[maybe_unused]] = nullptr;
-        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
-        {
-            col_null_map_to = ColumnUInt8::create(size);
-            vec_null_map_to = &col_null_map_to->getData();
-        }
-
-        const ColumnString::Chars * chars = nullptr;
-        const IColumn::Offsets * offsets = nullptr;
-        size_t fixed_string_size = 0;
-
-        if constexpr (std::is_same_v<FromDataType, DataTypeString>)
-        {
-            chars = &col_from_string->getChars();
-            offsets = &col_from_string->getOffsets();
-        }
-        else
-        {
-            chars = &col_from_fixed_string->getChars();
-            fixed_string_size = col_from_fixed_string->getN();
-        }
-
-        size_t current_offset = 0;
-
-        bool precise_float_parsing = false;
-
-        if (DB::CurrentThread::isInitialized())
-        {
-            const DB::ContextPtr query_context = DB::CurrentThread::get().getQueryContext();
-
-            if (query_context)
-                precise_float_parsing = query_context->getSettingsRef()[Setting::precise_float_parsing];
-        }
-
-        for (size_t i = 0; i < size; ++i)
-        {
-            size_t next_offset = std::is_same_v<FromDataType, DataTypeString> ? (*offsets)[i] : (current_offset + fixed_string_size);
-            size_t string_size = std::is_same_v<FromDataType, DataTypeString> ? next_offset - current_offset - 1 : fixed_string_size;
-
-            ReadBufferFromMemory read_buffer(chars->data() + current_offset, string_size);
-
-            if constexpr (exception_mode == ConvertFromStringExceptionMode::Throw)
-            {
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
-                {
-                    if constexpr (to_datetime64)
-                    {
-                        DateTime64 res = 0;
-                        parseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else
-                    {
-                        time_t res;
-                        parseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
-                    }
-                }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
-                {
-                    if constexpr (to_datetime64)
-                    {
-                        DateTime64 res = 0;
-                        parseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else
-                    {
-                        time_t res;
-                        parseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i], res);
-                    }
-                }
-                else
-                {
-                    if constexpr (to_datetime64)
-                    {
-                        DateTime64 value = 0;
-                        readDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                        vec_to[i] = value;
-                    }
-                    else if constexpr (IsDataTypeDecimal<ToDataType>)
-                    {
-                        SerializationDecimal<typename ToDataType::FieldType>::readText(
-                            vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
-                    }
-                    else
-                    {
-                        /// we want to utilize constexpr condition here, which is not mixable with value comparison
-                        do
-                        {
-                            if constexpr (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>)
-                            {
-                                if (fixed_string_size == IPV6_BINARY_LENGTH)
-                                {
-                                    readBinary(vec_to[i], read_buffer);
-                                    break;
-                                }
-                            }
-                            if constexpr (std::is_same_v<Additions, AccurateConvertStrategyAdditions>)
-                            {
-                                if (!tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing))
-                                    throw Exception(ErrorCodes::CANNOT_PARSE_TEXT, "Cannot parse string to type {}", TypeName<typename ToDataType::FieldType>);
-                            }
-                            else
-                                parseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
-                        } while (false);
-                    }
-                }
-
-                if (!isAllRead(read_buffer))
-                    throwExceptionForIncompletelyParsedValue(read_buffer, *res_type);
-            }
-            else
-            {
-                bool parsed;
-
-                if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffort)
-                {
-                    if constexpr (to_datetime64)
-                    {
-                        DateTime64 res = 0;
-                        parsed = tryParseDateTime64BestEffort(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else
-                    {
-                        time_t res;
-                        parsed = tryParseDateTimeBestEffort(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i],res);
-                    }
-                }
-                else if constexpr (parsing_mode == ConvertFromStringParsingMode::BestEffortUS)
-                {
-                    if constexpr (to_datetime64)
-                    {
-                        DateTime64 res = 0;
-                        parsed = tryParseDateTime64BestEffortUS(res, col_to->getScale(), read_buffer, *local_time_zone, *utc_time_zone);
-                        vec_to[i] = res;
-                    }
-                    else
-                    {
-                        time_t res;
-                        parsed = tryParseDateTimeBestEffortUS(res, read_buffer, *local_time_zone, *utc_time_zone);
-                        convertFromTime<ToDataType>(vec_to[i],res);
-                    }
-                }
-                else
-                {
-                    if constexpr (to_datetime64)
-                    {
-                        DateTime64 value = 0;
-                        parsed = tryReadDateTime64Text(value, col_to->getScale(), read_buffer, *local_time_zone);
-                        vec_to[i] = value;
-                    }
-                    else if constexpr (IsDataTypeDecimal<ToDataType>)
-                    {
-                        parsed = SerializationDecimal<typename ToDataType::FieldType>::tryReadText(
-                            vec_to[i], read_buffer, ToDataType::maxPrecision(), col_to->getScale());
-                    }
-                    else if (std::is_same_v<FromDataType, DataTypeFixedString> && std::is_same_v<ToDataType, DataTypeIPv6>
-                            && fixed_string_size == IPV6_BINARY_LENGTH)
-                    {
-                        readBinary(vec_to[i], read_buffer);
-                        parsed = true;
-                    }
-                    else
-                    {
-                        parsed = tryParseImpl<ToDataType>(vec_to[i], read_buffer, local_time_zone, precise_float_parsing);
-                    }
-                }
-
-                if (!isAllRead(read_buffer))
-                    parsed = false;
-
-                if (!parsed)
-                {
-                    if constexpr (std::is_same_v<ToDataType, DataTypeDate32>)
-                    {
-                        vec_to[i] = -static_cast<Int32>(DateLUT::instance().getDayNumOffsetEpoch()); /// NOLINT(readability-static-accessed-through-instance)
-                    }
-                    else
-                    {
-                        vec_to[i] = static_cast<typename ToDataType::FieldType>(0);
-                    }
-                }
-
-                if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
-                    (*vec_null_map_to)[i] = !parsed;
-            }
-
-            current_offset = next_offset;
-        }
-
-        if constexpr (exception_mode == ConvertFromStringExceptionMode::Null)
-            return ColumnNullable::create(std::move(col_to), std::move(col_null_map_to));
-        else
-            return col_to;
-    }
-};
-
-
-/// Function toUnixTimestamp has exactly the same implementation as toDateTime of String type.
-struct NameToUnixTimestamp { static constexpr auto name = "toUnixTimestamp"; };
-
-/// Declared early because used below.
-struct NameToDate { static constexpr auto name = "toDate"; };
-struct NameToDate32 { static constexpr auto name = "toDate32"; };
-struct NameToDateTime { static constexpr auto name = "toDateTime"; };
-struct NameToDateTime32 { static constexpr auto name = "toDateTime32"; };
-struct NameToDateTime64 { static constexpr auto name = "toDateTime64"; };
-struct NameToString { static constexpr auto name = "toString"; };
-struct NameToDecimal32 { static constexpr auto name = "toDecimal32"; };
-struct NameToDecimal64 { static constexpr auto name = "toDecimal64"; };
-struct NameToDecimal128 { static constexpr auto name = "toDecimal128"; };
-struct NameToDecimal256 { static constexpr auto name = "toDecimal256"; };
-
 
 #define DEFINE_NAME_TO_INTERVAL(INTERVAL_KIND) \
     struct NameToInterval ## INTERVAL_KIND \
