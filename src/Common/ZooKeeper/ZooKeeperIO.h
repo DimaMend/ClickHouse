@@ -9,7 +9,6 @@
 #include <vector>
 #include <array>
 
-
 namespace Coordination
 {
 
