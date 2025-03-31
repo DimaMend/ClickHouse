@@ -192,7 +192,7 @@ public:
                 return JSONPathInfo<JSONParser>{json_path, path_has_asterisk};
             };
             Impl impl;
-            if (impl.hasMultipleJsonPaths())
+            if (impl.hasMultipleJSONPaths())
             {
                 for (size_t i = 1; i < arguments.size(); ++i)
                     json_paths.emplace_back(parse_json_path(arguments[i], i));
@@ -320,7 +320,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
     static ColumnNumbers getArgumentsThatAreAlwaysConstant(const size_t) { return {1}; }
-    static bool hasMultipleJsonPaths() { return false; }
+    static bool hasMultipleJSONPaths() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, JSONPaths & json_paths, bool)
     {
@@ -372,7 +372,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
     static ColumnNumbers getArgumentsThatAreAlwaysConstant(const size_t) { return {1}; }
-    static bool hasMultipleJsonPaths() { return false; }
+    static bool hasMultipleJSONPaths() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, JSONPaths & json_paths, bool function_json_value_return_type_allow_complex)
     {
@@ -444,7 +444,7 @@ public:
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
     static ColumnNumbers getArgumentsThatAreAlwaysConstant(const size_t) { return {1}; }
-    static bool hasMultipleJsonPaths() { return false; }
+    static bool hasMultipleJSONPaths() { return false; }
 
     static bool insertResultToColumn(IColumn & dest, const Element & root, JSONPaths & json_paths, bool)
     {
@@ -515,7 +515,7 @@ public:
     }
 
     static size_t getNumberOfIndexArguments(const ColumnsWithTypeAndName & arguments) { return arguments.size() - 1; }
-    static bool hasMultipleJsonPaths() { return true; }
+    static bool hasMultipleJSONPaths() { return true; }
 
     static ColumnNumbers getArgumentsThatAreAlwaysConstant(const size_t max_query_number)
     {
