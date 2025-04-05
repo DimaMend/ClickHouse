@@ -306,6 +306,7 @@ void BackgroundSchedulePool::threadFunction()
 
         if (task)
             task->execute();
+        resetLoggerThreadContext();
     }
 }
 

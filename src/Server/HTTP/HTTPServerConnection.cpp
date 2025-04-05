@@ -123,6 +123,8 @@ void HTTPServerConnection::run()
                 throw;
         }
     }
+
+    resetLoggerThreadContext();
 }
 
 // static

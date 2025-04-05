@@ -206,6 +206,7 @@ MergeTreeIndexGranuleVectorSimilarity::MergeTreeIndexGranuleVectorSimilarity(
     , scalar_kind(scalar_kind_)
     , usearch_hnsw_params(usearch_hnsw_params_)
     , index(std::move(index_))
+    , logger(getLogger("VectorSimilarityIndex"))
 {
 }
 

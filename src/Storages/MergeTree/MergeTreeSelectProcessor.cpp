@@ -106,6 +106,7 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , lazily_read_info(lazily_read_info_)
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), lazily_read_info, prewhere_info))
+    , log(getLogger("MergeTreeSelectProcessor"))
 {
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)

@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <Interpreters/ClientInfo.h>
+#include <quill/core/LogLevel.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -12,6 +13,7 @@
 #include <Poco/Util/HelpFormatter.h>
 #include <Poco/Environment.h>
 #include <Poco/Config.h>
+#include <Common/Logger.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/logger_useful.h>
 #include <base/phdr_cache.h>
@@ -429,13 +431,14 @@ Poco::Net::SocketAddress Server::socketBindListen(
     UInt16 port,
     [[maybe_unused]] bool secure) const
 {
-    auto address = makeSocketAddress(host, port, &logger());
+    auto logger = getRootLogger();
+    auto address = makeSocketAddress(host, port, logger);
     socket.bind(address, /* reuseAddress = */ true, /* reusePort = */ config.getBool("listen_reuse_port", false));
     /// If caller requests any available port from the OS, discover it after binding.
     if (port == 0)
     {
         address = socket.address();
-        LOG_DEBUG(&logger(), "Requested any available port (port == 0), actual port is {:d}", address.port());
+        LOG_DEBUG(logger, "Requested any available port (port == 0), actual port is {:d}", address.port());
     }
 
     socket.listen(/* backlog = */ config.getUInt("listen_backlog", 4096));
@@ -509,7 +512,7 @@ void Server::createServer(
         if (start_server)
         {
             servers.back().start();
-            LOG_INFO(&logger(), "Listening for {}", servers.back().getDescription());
+            LOG_INFO(getRootLogger(), "Listening for {}", servers.back().getDescription());
         }
         global_context->registerServerPort(port_name, port);
     }
@@ -517,7 +520,7 @@ void Server::createServer(
     {
         if (listen_try)
         {
-            LOG_WARNING(&logger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
+            LOG_WARNING(getRootLogger(), "Listen [{}]:{} failed: {}. If it is an IPv6 or IPv4 address and your host has disabled IPv6 or IPv4, "
                 "then consider to "
                 "specify not disabled IPv4 or IPv6 address to listen in <listen_host> element of configuration "
                 "file. Example for disabled IPv6: <listen_host>0.0.0.0</listen_host> ."
@@ -536,7 +539,7 @@ void Server::createServer(
 namespace
 {
 
-void setOOMScore(int value, LoggerRawPtr log)
+void setOOMScore(int value, LoggerPtr log)
 {
     try
     {
@@ -560,7 +563,7 @@ void setOOMScore(int value, LoggerRawPtr log)
 
 void Server::uninitialize()
 {
-    logger().information("shutting down");
+    LOG_INFO(getRootLogger(), "shutting down");
     BaseDaemon::uninitialize();
 }
 
@@ -588,9 +591,10 @@ void Server::initialize(Poco::Util::Application & self)
 {
     ConfigProcessor::registerEmbeddedConfig("config.xml", std::string_view(reinterpret_cast<const char *>(gresource_embedded_xmlData), gresource_embedded_xmlSize));
     BaseDaemon::initialize(self);
-    logger().information("starting up");
+    auto logger = getRootLogger();
+    LOG_INFO(logger, "starting up");
 
-    LOG_INFO(&logger(), "OS name: {}, version: {}, architecture: {}",
+    LOG_INFO(logger, "OS name: {}, version: {}, architecture: {}",
         Poco::Environment::osName(),
         Poco::Environment::osVersion(),
         Poco::Environment::osArchitecture());
@@ -813,7 +817,7 @@ void sanityChecks(Server & server)
 
 }
 
-void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, Poco::Logger * log)
+void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, ContextMutablePtr context, LoggerPtr log)
 {
     try
     {
@@ -884,7 +888,7 @@ void loadStartupScripts(const Poco::Util::AbstractConfiguration & config, Contex
 
 static void initializeAzureSDKLogger(
     [[ maybe_unused ]] const ServerSettings & server_settings,
-    [[ maybe_unused ]] int server_logs_level)
+    [[ maybe_unused ]] quill::LogLevel server_logs_level)
 {
 #if USE_AZURE_BLOB_STORAGE
     if (!server_settings[ServerSetting::enable_azure_sdk_logging])
@@ -892,31 +896,34 @@ static void initializeAzureSDKLogger(
 
     using AzureLogsLevel = Azure::Core::Diagnostics::Logger::Level;
 
-    static const std::unordered_map<AzureLogsLevel, std::pair<Poco::Message::Priority, DB::LogsLevel>> azure_to_server_mapping =
+    static const std::unordered_map<AzureLogsLevel, DB::LogsLevel> azure_to_server_mapping =
     {
-        {AzureLogsLevel::Error, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
-        {AzureLogsLevel::Warning, {Poco::Message::PRIO_DEBUG, LogsLevel::debug}},
-        {AzureLogsLevel::Informational, {Poco::Message::PRIO_TRACE, LogsLevel::trace}},
-        {AzureLogsLevel::Verbose, {Poco::Message::PRIO_TEST, LogsLevel::test}},
+        {AzureLogsLevel::Error, LogsLevel::debug},
+        {AzureLogsLevel::Warning, LogsLevel::debug},
+        {AzureLogsLevel::Informational, LogsLevel::trace},
+        {AzureLogsLevel::Verbose, LogsLevel::test},
     };
 
-    static const std::map<Poco::Message::Priority, AzureLogsLevel> server_to_azure_mapping =
+    static const std::map<quill::LogLevel, AzureLogsLevel> server_to_azure_mapping =
     {
-        {Poco::Message::PRIO_DEBUG, AzureLogsLevel::Warning},
-        {Poco::Message::PRIO_TRACE, AzureLogsLevel::Informational},
-        {Poco::Message::PRIO_TEST, AzureLogsLevel::Verbose},
+        {quill::LogLevel::Debug, AzureLogsLevel::Warning},
+        {quill::LogLevel::TraceL1, AzureLogsLevel::Informational},
+        {quill::LogLevel::TraceL2, AzureLogsLevel::Verbose},
+        {quill::LogLevel::TraceL3, AzureLogsLevel::Verbose},
     };
 
     static const LoggerPtr azure_sdk_logger = getLogger("AzureSDK");
 
-    auto it = server_to_azure_mapping.lower_bound(static_cast<Poco::Message::Priority>(server_logs_level));
-    chassert(it != server_to_azure_mapping.end());
-    Azure::Core::Diagnostics::Logger::SetLevel(it->second);
+    auto azure_log_level = AzureLogsLevel::Warning;
+    if (server_logs_level <= quill::LogLevel::Debug)
+        azure_log_level = server_to_azure_mapping.at(server_logs_level);
+
+    Azure::Core::Diagnostics::Logger::SetLevel(azure_log_level);
 
     Azure::Core::Diagnostics::Logger::SetListener([](AzureLogsLevel level, const std::string & message)
     {
-        auto [poco_level, db_level] = azure_to_server_mapping.at(level);
-        LOG_IMPL(azure_sdk_logger, db_level, poco_level, fmt::runtime(message));
+        auto db_level = azure_to_server_mapping.at(level);
+        LOG_IMPL(azure_sdk_logger, db_level, fmt::runtime(message));
     });
 #endif
 }
@@ -957,7 +964,7 @@ try
 
     Stopwatch startup_watch;
 
-    Poco::Logger * log = &logger();
+    auto log = getRootLogger();
 
     UseSSL use_ssl;
 
@@ -1450,6 +1457,7 @@ try
         {
             LOG_DEBUG(log, "Will remap executable in memory.");
             size_t size = remapExecutable();
+            DB::startQuillBackend(&config());
             LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
         }
 
@@ -1910,7 +1918,7 @@ try
             // FIXME logging-related things need synchronization -- see the 'Logger * log' saved
             // in a lot of places. For now, disable updating log configuration without server restart.
             //setTextLog(global_context->getTextLog());
-            updateLevels(*config, logger());
+            updateLevels(*config);
             global_context->setClustersConfig(config, has_zookeeper);
             global_context->setMacros(std::make_unique<Macros>(*config, "macros", log));
             global_context->setExternalAuthenticatorsConfig(*config);
@@ -2424,8 +2432,8 @@ try
         global_context->setSystemZooKeeperLogAfterInitializationIfNeeded();
         /// Build loggers before tables startup to make log messages from tables
         /// attach available in system.text_log
-        buildLoggers(config(), logger());
-        initializeAzureSDKLogger(server_settings, logger().getLevel());
+        buildLoggers(config());
+        initializeAzureSDKLogger(server_settings, getRootLogger()->getQuillLogger()->get_log_level());
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(global_context, *database_catalog.getSystemDatabase(), has_zookeeper);
         attachInformationSchema(global_context, *database_catalog.getDatabase(DatabaseCatalog::INFORMATION_SCHEMA));
@@ -2715,6 +2723,7 @@ try
                 /// Dump coverage here, because std::atexit callback would not be called.
                 dumpCoverageReportIfPossible();
                 LOG_WARNING(log, "Will shutdown forcefully.");
+                getRootLogger()->flushLogs();
                 safeExit(0);
             }
         });
@@ -3091,7 +3100,7 @@ void Server::createServers(
                     listen_host,
                     port_name,
                     "gRPC protocol: " + server_address.toString(),
-                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, &logger())));
+                    std::make_unique<GRPCServer>(*this, makeSocketAddress(listen_host, port, getRootLogger())));
             });
         }
 #endif
@@ -3197,7 +3206,7 @@ void Server::stopServers(
     std::vector<ProtocolServerAdapter> & servers,
     const ServerType & server_type) const
 {
-    LoggerRawPtr log = &logger();
+    LoggerPtr log = getRootLogger();
 
     /// Remove servers once all their connections are closed
     auto check_server = [&log](const char prefix[], auto & server)
@@ -3236,7 +3245,7 @@ void Server::updateServers(
     std::vector<ProtocolServerAdapter> & servers,
     std::vector<ProtocolServerAdapter> & servers_to_start_before_tables)
 {
-    LoggerRawPtr log = &logger();
+    LoggerPtr log = getRootLogger();
 
     const auto listen_hosts = getListenHosts(config);
     const auto interserver_listen_hosts = getInterserverListenHosts(config);

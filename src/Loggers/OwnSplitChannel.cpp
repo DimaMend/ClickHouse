@@ -4,6 +4,7 @@
 #include <Columns/IColumn.h>
 #include <Common/CurrentThread.h>
 #include <Common/DNSResolver.h>
+#include <Common/Logger.h>
 #include <Common/setThreadName.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SensitiveDataMasker.h>

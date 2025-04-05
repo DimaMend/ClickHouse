@@ -5,6 +5,8 @@
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Server/IServer.h>
 #include <Server/TCPProtocolStackData.h>
+#include <Common/Logger.h>
+#include <Common/QuillLogger.h>
 
 
 namespace DB
@@ -39,6 +41,8 @@ public:
             if (stack_data.socket != socket())
                 socket() = stack_data.socket;
         }
+
+        resetLoggerThreadContext();
     }
 };
 

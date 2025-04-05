@@ -6,19 +6,18 @@
 #include <Common/HashTable/Hash.h>
 #include <base/terminalColors.h>
 
-
 OwnPatternFormatter::OwnPatternFormatter(bool color_)
-    : Poco::PatternFormatter(""), color(color_)
+    : Poco::PatternFormatter("")
+    , server_timezone(DateLUT::serverTimezoneInstance())
+    , color(color_)
 {
 }
-
 
 void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext, std::string & text) const
 {
     DB::WriteBufferFromString wb(text);
 
     const Poco::Message & msg = msg_ext.base;
-
     /// Change delimiters in date for compatibility with old logs.
     DB::writeDateTimeText<'.', ':'>(msg_ext.time_seconds, wb, server_timezone);
 
@@ -63,6 +62,8 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
         writeCString(resetColor(), wb);
     writeCString(": ", wb);
     DB::writeString(msg.getText(), wb);
+
+    wb.finalize();
 }
 
 void OwnPatternFormatter::format(const Poco::Message & msg, std::string & text)

@@ -54,6 +54,7 @@ def clone_submodules():
         "contrib/incbin",
         "contrib/yaml-cpp",
         "contrib/corrosion",
+        "contrib/quill",
     ]
 
     res = Shell.check("git submodule sync", verbose=True, strict=True)

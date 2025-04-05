@@ -378,7 +378,6 @@ void updateGlobalConfiguration(
             LOG_IMPL(
                 log,
                 client_logs_level,
-                poco_level,
                 "[client.id:{}] [rdk:{}] {}",
                 kafka_object_config.get(client_id_key),
                 facility,
