@@ -765,7 +765,8 @@ class JobConfigs:
     buzz_fuzzer_jobs = Job.Config(
         name=JobNames.BUZZHOUSE,
         runs_on=["..params.."],
-        command=f"cd ./tests/ci && python3 ci.py --run-from-praktika",
+        command=f"python3 ./ci/jobs/buzzhouse_job.py",
+        run_in_docker="clickhouse/stateless-test",
         allow_merge_on_failure=True,
     ).parametrize(
         parameter=[
@@ -783,11 +784,11 @@ class JobConfigs:
             RunnerLabels.FUNC_TESTER_AMD,
         ],
         requires=[
-            ["Build (amd_debug)"],
-            ["Build (arm_asan)"],
-            ["Build (amd_tsan)"],
-            ["Build (amd_msan)"],
-            ["Build (amd_ubsan)"],
+            [ArtifactNames.CH_AMD_DEBUG],
+            [ArtifactNames.CH_ARM_ASAN],
+            [ArtifactNames.CH_AMD_TSAN],
+            [ArtifactNames.CH_AMD_MSAN],
+            [ArtifactNames.CH_AMD_UBSAN],
         ],
     )
     performance_comparison_with_prev_release_jobs = Job.Config(
