@@ -61,7 +61,15 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 condition = outputs_names[0];
             }
 
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(
+                query_condition_cache,
+                optimization_settings.query_condition_cache_zero_ratio_threshold,
+                condition_hash,
+                condition);
+
+            filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
+
             return;
         }
     }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <Storages/MergeTree/IMergeTreeReadPool.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
@@ -11,7 +12,6 @@
 
 #include <boost/core/noncopyable.hpp>
 
-
 namespace DB
 {
 
@@ -19,6 +19,9 @@ struct PrewhereExprInfo;
 
 struct LazilyReadInfo;
 using LazilyReadInfoPtr = std::shared_ptr<LazilyReadInfo>;
+
+class QueryConditionCacheWriter;
+using QueryConditionCacheWriterPtr = std::shared_ptr<QueryConditionCacheWriter>;
 
 struct ChunkAndProgress
 {
@@ -116,6 +119,8 @@ private:
     MergeTreeReadTaskPtr task;
     /// A result of getHeader(). A chunk which this header is returned from read().
     Block result_header;
+
+    QueryConditionCacheWriterPtr query_condition_cache_writer;
 
     ReadStepsPerformanceCounters read_steps_performance_counters;
 
