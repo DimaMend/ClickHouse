@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -40,7 +41,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     const auto & outputs = filter_actions_dag->getOutputs();
 
     /// Restrict to the case that ActionsDAG has a single output. This isn't technically necessary but de-risks the
-    /// implementatino a lot while not losing much usefulness.
+    /// implementation a lot while not losing much usefulness.
     if (outputs.size() != 1)
         return;
 
@@ -52,7 +53,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
     {
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
-            size_t condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
+            UInt64 condition_hash = filter_actions_dag->getOutputs()[0]->getHash();
 
             String condition;
             if (optimization_settings.query_condition_cache_store_conditions_as_plaintext)
@@ -61,7 +62,10 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 condition = outputs_names[0];
             }
 
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            auto query_condition_cache = Context::getGlobalContextInstance()->getQueryConditionCache();
+            auto query_condition_cache_writer = std::make_shared<QueryConditionCacheWriter>(query_condition_cache, condition_hash, condition);
+            filter_step->setQueryConditionCacheWriter(query_condition_cache_writer);
+
             return;
         }
     }
