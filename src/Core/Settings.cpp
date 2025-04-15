@@ -6496,6 +6496,28 @@ Allow experimental vector similarity index
     DECLARE(Bool, allow_experimental_codecs, false, R"(
 If it is set to true, allow to specify experimental compression codecs (but we don't have those yet and this option does nothing).
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_drop_detached_table, false, R"(
+Allows experimental drop detached table.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+
+Default value: `0`.
+
+**Example**
+
+Query:
+
+```sql
+SET allow_experimental_drop_detached_table=1;
+CREATE TABLE test_table (number UInt64) ENGINE=MergeTree ORDER BY number;
+INSERT INTO test_table SELECT number FROM system.numbers LIMIT 6;
+DETACH TABLE test_table;
+DROP DETACHED TABLE test_table SYNC;
+```
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_limit_for_ann_queries, 1'000'000, R"(
 SELECT queries with LIMIT bigger than this setting cannot use vector similarity indices. Helps to prevent memory overflows in vector similarity indices.
 )", EXPERIMENTAL) \
