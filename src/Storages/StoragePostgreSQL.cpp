@@ -35,6 +35,7 @@
 
 #include <Parsers/getInsertQuery.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTCreateQuery.h>
 
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
@@ -47,6 +48,7 @@
 #include <Storages/transformQueryForExternalDatabase.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Storages/NamedCollectionsHelpers.h>
+#include <Storages/PostgreSQL/PostgreSQLSettings.h>
 
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 
@@ -66,6 +68,11 @@ namespace Setting
     extern const SettingsUInt64 postgresql_connection_pool_wait_timeout;
 }
 
+namespace PostgreSQLSetting
+{
+    extern const PostgreSQLSettingsUInt64 connection_pool_size;
+}
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
@@ -82,11 +89,13 @@ StoragePostgreSQL::StoragePostgreSQL(
     const String & comment,
     ContextPtr context_,
     const String & remote_table_schema_,
-    const String & on_conflict_)
+    const String & on_conflict_,
+    const PostgreSQLSettings & postgresql_settings_)
     : IStorage(table_id_)
     , remote_table_name(remote_table_name_)
     , remote_table_schema(remote_table_schema_)
     , on_conflict(on_conflict_)
+    , postgresql_settings(std::make_unique<PostgreSQLSettings>(postgresql_settings_))
     , pool(std::move(pool_))
     , log(getLogger("StoragePostgreSQL (" + table_id_.getFullTableName() + ")"))
 {
@@ -529,15 +538,21 @@ SinkToStoragePtr StoragePostgreSQL::write(
     return std::make_shared<PostgreSQLSink>(metadata_snapshot, pool->get(), remote_table_name, remote_table_schema, on_conflict);
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(const NamedCollection & named_collection, ContextPtr context_, bool require_table)
+StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult(
+    const NamedCollection & named_collection, PostgreSQLSettings & storage_settings, ContextPtr context_, bool require_table)
 {
     StoragePostgreSQL::Configuration configuration;
+
     ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> required_arguments = {"user", "username", "password", "database", "db"};
     if (require_table)
         required_arguments.insert("table");
 
-    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
-        named_collection, required_arguments, {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"});
+    ValidateKeysMultiset<ExternalDatabaseEqualKeysSet> optional_arguments = {"schema", "on_conflict", "addresses_expr", "host", "hostname", "port", "use_table_cache"};
+    auto postgresql_settings_names = storage_settings.getAllRegisteredNames();
+    for (const auto & name : postgresql_settings_names)
+        optional_arguments.insert(name);
+
+    validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(named_collection, required_arguments, optional_arguments);
 
     configuration.addresses_expr = named_collection.getOrDefault<String>("addresses_expr", "");
     if (configuration.addresses_expr.empty())
@@ -564,12 +579,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::processNamedCollectionResult
     return configuration;
 }
 
-StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context)
+StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine_args, ContextPtr context, PostgreSQLSettings & storage_settings)
 {
     StoragePostgreSQL::Configuration configuration;
     if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context))
     {
-        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, context);
+        configuration = StoragePostgreSQL::processNamedCollectionResult(*named_collection, storage_settings, context);
     }
     else
     {
@@ -616,8 +631,20 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 {
     factory.registerStorage("PostgreSQL", [](const StorageFactory::Arguments & args)
     {
-        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext());
+        PostgreSQLSettings postgresql_settings;
+        auto configuration = StoragePostgreSQL::getConfiguration(args.engine_args, args.getLocalContext(), postgresql_settings);
+
+        if (args.storage_def->settings)
+            postgresql_settings.loadFromQuery(*args.storage_def);
+
         const auto & settings = args.getContext()->getSettingsRef();
+
+        if (!settings[Setting::postgresql_connection_pool_size])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "postgresql_connection_pool_size cannot be zero.");
+
+        if (!postgresql_settings[PostgreSQLSetting::connection_pool_size])
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "connection_pool_size cannot be zero.");
+
         auto pool = std::make_shared<postgres::PoolWithFailover>(
             configuration,
             settings[Setting::postgresql_connection_pool_size],
@@ -635,11 +662,14 @@ void registerStoragePostgreSQL(StorageFactory & factory)
             args.comment,
             args.getContext(),
             configuration.schema,
-            configuration.on_conflict);
+            configuration.on_conflict,
+            postgresql_settings);
     },
     {
+        .supports_settings = true,
         .supports_schema_inference = true,
         .source_access_type = AccessType::POSTGRES,
+        .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
     });
 }
 
