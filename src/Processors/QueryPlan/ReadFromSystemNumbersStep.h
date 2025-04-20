@@ -12,6 +12,8 @@
 namespace DB
 {
 
+class StorageSystemNumbers;
+
 class ReadFromSystemNumbersStep final : public SourceStepWithFilter
 {
 public:
@@ -28,7 +30,14 @@ public:
 
     void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
 
+    UInt64 getNumberOfRows() const;
+
+    String getColumnName() const;
+    StorageID getStorageID() const;
+
 private:
+    const StorageSystemNumbers & getStorage() const;
+
     /// Fail fast if estimated number of rows to read exceeds the limit
     void checkLimits(size_t rows);
 

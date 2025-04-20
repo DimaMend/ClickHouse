@@ -77,6 +77,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
+            {"query_plan_optimize_join_order", false, true, "Enable new join order optimizer"},
             /// Release closed. Please use 25.5
             {"use_query_condition_cache", false, true, "A new optimization"},
             {"allow_materialized_view_with_bad_select", true, false, "Don't allow creating MVs referencing nonexistent columns or tables"},
