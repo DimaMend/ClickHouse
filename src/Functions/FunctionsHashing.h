@@ -733,6 +733,19 @@ public:
 private:
     using ToType = typename Impl::ReturnType;
 
+#if USE_MULTITARGET_CODE
+    MULTITARGET_FUNCTION_AVX512F_AVX2(
+        MULTITARGET_FUNCTION_HEADER(template <typename FromType> static void),
+        executeManyTypeImpl,
+        MULTITARGET_FUNCTION_BODY((const PaddedPODArray<FromType> & vec_from, PaddedPODArray<ToType> & vec_to) /// NOLINT
+        {
+            size_t size = vec_from.size();
+
+            for (size_t i = 0; i < size; ++i)
+                vec_to[i] = Impl::apply(vec_from[i]);
+        }))
+#endif
+
     template <typename FromType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
     {
@@ -740,16 +753,20 @@ private:
 
         if (const ColVecType * col_from = checkAndGetColumn<ColVecType>(arguments[0].column.get()))
         {
-            auto col_to = ColumnVector<ToType>::create();
-
             const typename ColVecType::Container & vec_from = col_from->getData();
+            auto col_to = ColumnVector<ToType>::create(vec_from.size());
             typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
-            size_t size = vec_from.size();
-            vec_to.resize(size);
-            for (size_t i = 0; i < size; ++i)
-                vec_to[i] = Impl::apply(vec_from[i]);
-
+#if USE_MULTITARGET_CODE
+            if (isArchSupported(TargetArch::AVX512F))
+                executeManyTypeImplAVX512F(vec_from, vec_to);
+            else if (isArchSupported(TargetArch::AVX2))
+                executeManyTypeImplAVX2(vec_from, vec_to);
+            else
+#endif
+            {
+                executeManyTypeImpl(vec_from, vec_to);
+            }
             return col_to;
         }
 
