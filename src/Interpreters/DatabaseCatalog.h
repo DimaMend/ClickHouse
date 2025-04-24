@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <shared_mutex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -194,10 +195,8 @@ public:
     bool isPredefinedTable(const StorageID & table_id) const;
 
     /// View dependencies between a source table and its view.
-    void addViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     void removeViewDependency(const StorageID & source_table_id, const StorageID & view_id);
     std::vector<StorageID> getDependentViews(const StorageID & source_table_id) const;
-    void updateViewDependency(const StorageID & old_source_table_id, const StorageID & old_view_id, const StorageID & new_source_table_id, const StorageID & new_view_id);
 
     /// If table has UUID, addUUIDMapping(...) must be called when table attached to some database
     /// removeUUIDMapping(...) must be called when it detached,
@@ -233,15 +232,15 @@ public:
     /// if "B" is referenced in the definition of "A".
     /// Loading dependencies were used to check whether a table can be removed before we had those referential dependencies.
     /// Now we support this mode (see `check_table_referential_dependencies` in Setting.h) for compatibility.
-    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies);
-    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
-    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies);
-    std::pair<std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false);
+    void addDependencies(const StorageID & table_id, const std::vector<StorageID> & new_referential_dependencies, const std::vector<StorageID> & new_loading_dependencies, const std::vector<StorageID> & new_view_dependencies);
+    void addDependencies(const QualifiedTableName & table_name, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
+    void addDependencies(const TablesDependencyGraph & new_referential_dependencies, const TablesDependencyGraph & new_loading_dependencies, const TablesDependencyGraph & new_view_dependencies);
+    std::tuple<std::vector<StorageID>, std::vector<StorageID>, std::vector<StorageID>> removeDependencies(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false, bool is_mv = false);
     std::vector<StorageID> getReferentialDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getReferentialDependents(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependencies(const StorageID & table_id) const;
     std::vector<StorageID> getLoadingDependents(const StorageID & table_id) const;
-    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies);
+    void updateDependencies(const StorageID & table_id, const TableNamesSet & new_referential_dependencies, const TableNamesSet & new_loading_dependencies, const TableNamesSet & new_view_dependencies);
 
     void checkTableCanBeRemovedOrRenamed(const StorageID & table_id, bool check_referential_dependencies, bool check_loading_dependencies, bool is_drop_database = false) const;
 
@@ -265,6 +264,12 @@ public:
     }
 
     void triggerReloadDisksTask(const Strings & new_added_disks);
+
+    void stopReplicatedDDLQueries();
+    void startReplicatedDDLQueries();
+    bool canPerformReplicatedDDLQueries() const;
+
+    void updateMetadataFile(const DatabasePtr & database);
 
 private:
     // The global instance of database catalog. unique_ptr is to allow
@@ -354,28 +359,15 @@ private:
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
-    static constexpr time_t default_drop_delay_sec = 8 * 60;
-    time_t drop_delay_sec = default_drop_delay_sec;
     std::condition_variable wait_table_finally_dropped;
-
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> cleanup_task;
-    static constexpr time_t default_unused_dir_hide_timeout_sec = 60 * 60;              /// 1 hour
-    time_t unused_dir_hide_timeout_sec = default_unused_dir_hide_timeout_sec;
-    static constexpr time_t default_unused_dir_rm_timeout_sec = 30 * 24 * 60 * 60;      /// 30 days
-    time_t unused_dir_rm_timeout_sec = default_unused_dir_rm_timeout_sec;
-    static constexpr time_t default_unused_dir_cleanup_period_sec = 24 * 60 * 60;       /// 1 day
-    time_t unused_dir_cleanup_period_sec = default_unused_dir_cleanup_period_sec;
-
-    static constexpr time_t default_drop_error_cooldown_sec = 5;
-    time_t drop_error_cooldown_sec = default_drop_error_cooldown_sec;
-
-    static constexpr size_t default_drop_table_concurrency = 10;
-    size_t drop_table_concurrency = default_drop_table_concurrency;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> reload_disks_task;
     std::mutex reload_disks_mutex;
     std::set<String> disks_to_reload;
     static constexpr time_t DBMS_DEFAULT_DISK_RELOAD_PERIOD_SEC = 5;
+
+    std::atomic<bool> replicated_ddl_queries_enabled = false;
 };
 
 
