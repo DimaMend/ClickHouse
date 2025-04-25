@@ -999,10 +999,7 @@ class SettingsRandomizer:
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
         "local_filesystem_read_method": lambda: random.choice(
-            # Allow to use uring only when running on Linux
-            ["read", "pread", "mmap", "pread_threadpool", "io_uring"]
-            if platform.system().lower() == "linux"
-            else ["read", "pread", "mmap", "pread_threadpool"]
+            ["read", "pread", "mmap", "pread_threadpool"]
         ),
         "remote_filesystem_read_method": lambda: random.choice(["read", "threadpool"]),
         "local_filesystem_read_prefetch": lambda: random.randint(0, 1),
@@ -1574,7 +1571,7 @@ class TestCase:
                 stderr += str(stdfd.read(), errors="replace", encoding="utf-8")
 
         if debug_log:
-            debug_log = "\n".join(debug_log.splitlines()[:100])
+            debug_log = "\n".join(debug_log.splitlines()[-100:])
 
         if proc:
             if proc.returncode is None:
