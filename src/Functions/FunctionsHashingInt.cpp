@@ -1,6 +1,6 @@
-#include "FunctionsHashing.h"
-
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsHashing.h>
+#include <Common/TargetSpecific.h>
 
 /// FunctionsHashing instantiations are separated into files FunctionsHashing*.cpp
 /// to better parallelize the build procedure and avoid MSan build failure
@@ -27,7 +27,6 @@ public:
 private:
     using ToType = typename Impl::ReturnType;
 
-#if USE_MULTITARGET_CODE
     MULTITARGET_FUNCTION_AVX512F_AVX2(
         MULTITARGET_FUNCTION_HEADER(template <typename FromType> static void),
         executeManyTypeImpl,
@@ -39,7 +38,6 @@ private:
                 vec_to[i] = Impl::apply(vec_from[i]);
         })
     )
-#endif
 
     template <typename FromType>
     ColumnPtr executeType(const ColumnsWithTypeAndName & arguments) const
