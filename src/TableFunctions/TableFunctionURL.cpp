@@ -40,9 +40,14 @@ std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNo
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
-        auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>();
-        if (function_node && function_node->getFunctionName() == "headers")
-            result.push_back(i);
+        if (auto * function_node = table_function_arguments_nodes[i]->as<FunctionNode>())
+        {
+            const auto & function_name = function_node->getFunctionName();
+            if (function_name == "headers" || function_name == "body")
+            {
+                result.push_back(i);
+            }
+        }
     }
 
     return result;
@@ -68,21 +73,39 @@ void TableFunctionURL::parseArgumentsImpl(ASTs & args, const ContextPtr & contex
         if (format == "auto")
             format = FormatFactory::instance().tryGetFormatFromFileName(Poco::URI(filename).getPath()).value_or("auto");
 
-        StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, configuration.body, context);
     }
     else
     {
-        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, context);
+        size_t count = StorageURL::evalArgsAndCollectHeaders(args, configuration.headers, configuration.body, context);
+        /// ITableFunctionFileLike cannot parse _headers_ and _body_ argument, so remove it.
+        ASTPtr body_ast;
         /// ITableFunctionFileLike cannot parse headers argument, so remove it.
         ASTPtr headers_ast;
         if (count != args.size())
         {
-            chassert(count + 1 == args.size());
-            headers_ast = args.back();
-            args.pop_back();
+            if (count + 1 == args.size())
+            {
+                headers_ast = args.back();
+                args.pop_back();
+            }
+            else if (count + 2 == args.size())
+            {
+                headers_ast = args.back();
+                args.pop_back();
+                body_ast = args.back();
+                args.pop_back();
+            }
+            else
+            {
+                chassert(false);
+            }
         }
 
         ITableFunctionFileLike::parseArgumentsImpl(args, context);
+
+        if (body_ast)
+            args.push_back(body_ast);
 
         if (headers_ast)
             args.push_back(headers_ast);
@@ -128,6 +151,7 @@ StoragePtr TableFunctionURL::getStorage(
         global_context,
         compression_method_,
         configuration.headers,
+        configuration.body,
         configuration.http_method,
         nullptr,
         /*distributed_processing=*/ is_secondary_query);
@@ -143,6 +167,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
                        filename,
                        chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
                        configuration.headers,
+                       configuration.body,
                        std::nullopt,
                        context).first;
 
@@ -150,6 +175,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
             filename,
             chooseCompressionMethod(Poco::URI(filename).getPath(), compression_method),
             configuration.headers,
+            configuration.body,
             std::nullopt,
             context);
     }
