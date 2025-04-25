@@ -42,8 +42,9 @@ static inline __attribute__((__always_inline__)) uint32_t getblock(const uint32_
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
     return *p;
 #else
-    const uint8_t * c = (const uint8_t *)p;
-    return (uint32_t)c[0] | (uint32_t)c[1] << 8 | (uint32_t)c[2] << 16 | (uint32_t)c[3] << 24;
+    const uint8_t * c = reinterpret_cast<const uint8_t *>(p);
+    return static_cast<uint32_t>(c[0]) | static_cast<uint32_t>(c[1]) << 8 | static_cast<uint32_t>(c[2]) << 16
+        | static_cast<uint32_t>(c[3]) << 24;
 #endif
 }
 
@@ -52,9 +53,10 @@ static inline __attribute__((__always_inline__)) uint64_t getblock(const uint64_
 #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__)
     return *p;
 #else
-    const uint8_t * c = (const uint8_t *)p;
-    return (uint64_t)c[0] | (uint64_t)c[1] << 8 | (uint64_t)c[2] << 16 | (uint64_t)c[3] << 24 | (uint64_t)c[4] << 32 | (uint64_t)c[5] << 40
-        | (uint64_t)c[6] << 48 | (uint64_t)c[7] << 56;
+    const uint8_t * c = reinterpret_cast<const uint8_t *>(p);
+    return static_cast<uint64_t>(c[0]) | static_cast<uint64_t>(c[1]) << 8 | static_cast<uint64_t>(c[2]) << 16
+        | static_cast<uint64_t>(c[3]) << 24 | static_cast<uint64_t>(c[4]) << 32 | static_cast<uint64_t>(c[5]) << 40
+        | static_cast<uint64_t>(c[6]) << 48 | static_cast<uint64_t>(c[7]) << 56;
 #endif
 }
 
