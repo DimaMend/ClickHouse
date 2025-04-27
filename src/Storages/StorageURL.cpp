@@ -942,7 +942,7 @@ namespace
                 url_options_to_check[current_index - 1].cend(),
                 getContext(),
                 {},
-                Poco::Net::HTTPRequest::HTTP_GET, // TODO: maybe POST
+                "", // TODO: maybe POST
                 getWriteBodyCallback(body),
                 getHTTPTimeouts(getContext()),
                 credentials,
@@ -1274,10 +1274,8 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
         auto source = std::make_shared<StorageURLSource>(
             info,
             iterator_wrapper,
-            //storage->getReadMethod(),
-            //read_post_data_callback,
-            "",
-            callback,
+            storage->getReadMethod(),
+            read_post_data_callback,
             storage->format_name,
             storage->format_settings,
             storage->getName(),
@@ -1330,7 +1328,7 @@ void StorageURLWithFailover::read(
     bool need_only_count = (query_info.optimize_trivial_count || read_from_format_info.requested_columns.empty())
         && local_context->getSettingsRef()[Setting::optimize_count_from_files];
 
-    auto read_post_data_callback = getReadPOSTDataCallback( // TODO:
+    auto read_post_data_callback = getReadPOSTDataCallback(
         read_from_format_info.columns_description.getNamesOfPhysical(),
         read_from_format_info.columns_description,
         query_info,
