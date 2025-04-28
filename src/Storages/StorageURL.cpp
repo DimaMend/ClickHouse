@@ -1268,14 +1268,14 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
 
     const size_t max_parsing_threads = num_streams >= settings[Setting::max_parsing_threads] ? 1 : (settings[Setting::max_parsing_threads] / num_streams);
 
-    auto callback = getWriteBodyCallback(storage->body);
+    auto body_post_callback = getWriteBodyCallback(storage->body);
     for (size_t i = 0; i < num_streams; ++i)
     {
         auto source = std::make_shared<StorageURLSource>(
             info,
             iterator_wrapper,
-            storage->getReadMethod(),
-            read_post_data_callback,
+            read_post_data_callback ? storage->getReadMethod() : "",
+            read_post_data_callback ? read_post_data_callback : body_post_callback,
             storage->format_name,
             storage->format_settings,
             storage->getName(),
