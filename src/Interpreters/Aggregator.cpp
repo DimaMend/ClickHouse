@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <optional>
+#include <queue>
 #include <Core/Settings.h>
 #include <Poco/Util/Application.h>
 
@@ -1011,6 +1012,12 @@ void NO_INLINE Aggregator::executeImpl(
     }
 }
 
+template <typename T, typename = void>
+struct HasConstIterator : std::false_type {};
+
+template <typename T>
+struct HasConstIterator<T, std::void_t<typename T::const_iterator>> : std::true_type {};
+
 template <bool prefetch, typename Method, typename State>
 void NO_INLINE Aggregator::executeImplBatch(
     Method & method,
@@ -1133,6 +1140,22 @@ void NO_INLINE Aggregator::executeImplBatch(
     {
         if (params.optimization_indexes != std::nullopt && params.limit_plus_offset_length < (key_end - key_start) / 2)
         {
+            size_t max_allowable_fill = std::numeric_limits<uint64_t>::max();
+            const size_t allowed_times_more = 4; // constant could be changed;
+            if (std::numeric_limits<uint64_t>::max() / allowed_times_more >= params.limit_plus_offset_length)
+            {
+                max_allowable_fill = params.limit_plus_offset_length * allowed_times_more;
+                // round up max_allowable_fill to the nearest power of 2 from above
+                size_t pow2 = 1;
+                while (pow2 < max_allowable_fill)
+                    pow2 *= 2;
+                max_allowable_fill = pow2;
+            }
+            if constexpr (HasConstIterator<decltype(method.data)>::value)
+            {
+                std::priority_queue<typename decltype(method.data)::const_iterator> top_keys;
+                static_cast<void>(top_keys);
+            }
             const auto& optimization_indexes = params.optimization_indexes.value();
             for (size_t i = key_start; i < key_end; ++i)
             {
@@ -1150,7 +1173,8 @@ void NO_INLINE Aggregator::executeImplBatch(
                     }
                 }
 
-                auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length);
+                // TODO pass priority_queue to emplaceKeyOptimization
+                auto emplace_result = state.emplaceKeyOptimization(method.data, i, *aggregates_pool, optimization_indexes, params.limit_plus_offset_length, max_allowable_fill);
 
                 if (!emplace_result.has_value())
                 {
