@@ -185,9 +185,9 @@ struct SplitTokenExtractor final : public ITokenExtractorHelper<SplitTokenExtrac
 
 };
 
-struct SparceGramTokenExtractor final : public ITokenExtractorHelper<SparceGramTokenExtractor>
+struct SparseGramTokenExtractor final : public ITokenExtractorHelper<SparseGramTokenExtractor>
 {
-    explicit SparceGramTokenExtractor(size_t min_length = 3, size_t max_length = 100);
+    explicit SparseGramTokenExtractor(size_t min_length = 3, size_t max_length = 100, std::optional<size_t> min_cutoff_length_ = std::nullopt);
 
     static const char * getName() { return "sparse_gram"; }
 
