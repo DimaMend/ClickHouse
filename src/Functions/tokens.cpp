@@ -17,7 +17,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-class FunctionTokens : public IFunction
+class FunctionTokensExtractor : public IFunction
 {
     static constexpr size_t arg_value = 0;
     static constexpr size_t arg_tokenizer = 1;
@@ -26,7 +26,7 @@ class FunctionTokens : public IFunction
 public:
     static constexpr auto name = "tokens";
 
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokens>(); }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionTokensExtractor>(); }
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
@@ -133,7 +133,7 @@ private:
 
 REGISTER_FUNCTION(Tokens)
 {
-    factory.registerFunction<FunctionTokens>(FunctionDocumentation{
+    factory.registerFunction<FunctionTokensExtractor>(FunctionDocumentation{
         .description = "Splits the text into tokens by a given tokenizer.",
         .category = FunctionDocumentation::Category::StringSplitting});
 }
