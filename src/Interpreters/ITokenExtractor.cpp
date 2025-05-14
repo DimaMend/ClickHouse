@@ -314,7 +314,7 @@ bool NoOpTokenExtractor::nextInStringLike(const char * /*data*/, size_t /*length
 {
     return false;
 }
-  
+
 SparseGramTokenExtractor::SparseGramTokenExtractor(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)
     : sparse_grams_iterator(min_length, max_length, min_cutoff_length_)
 {
