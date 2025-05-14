@@ -265,7 +265,7 @@ public:
         end = end_;
 
         symbol_iterator = NGramSymbolIterator(pos, end, min_ngram_length - 1);
-        for (size_t i = 0; i < min_ngram_length - 2; ++i)
+        for (size_t i = 0; i < min_ngram_length - 2 && !symbol_iterator.isEnd(); ++i)
             symbol_iterator.increment();
     }
 
