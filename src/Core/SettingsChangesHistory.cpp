@@ -72,6 +72,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"geotoh3_lon_lat_input_order", true, false, "A new setting for legacy behaviour to set lon and lat order"},
             {"secondary_indices_enable_bulk_filtering", false, true, "A new algorithm for filtering by data skipping indices"},
             {"implicit_table_at_top_level", "", "", "A new setting, used in clickhouse-local"},
+            {"enable_parallel_blocks_marshalling", "false", "true", "A new setting"},
             {"use_skip_indexes_if_final_exact_mode", 0, 0, "This setting was introduced to help FINAL query return correct results with skip indexes"},
             {"parsedatetime_e_requires_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
             {"formatdatetime_e_with_space_padding", true, false, "Improved compatibility with MySQL DATE_FORMAT/STR_TO_DATE"},
@@ -105,6 +106,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"compile_expressions", false, true, "We believe that the LLVM infrastructure behind the JIT compiler is stable enough to enable this setting by default."},
             {"use_legacy_to_time", false, false, "New setting. Allows for user to use the old function logic for toTime, which works as toTimeWithFixedDate."},
             {"input_format_parquet_allow_geoparquet_parser", false, true, "A new setting to use geo columns in parquet file"},
+            {"enable_producing_buckets_out_of_order_in_aggregation", false, true, "New setting"},
         });
         addSettingsChanges(settings_changes_history, "25.4",
         {
