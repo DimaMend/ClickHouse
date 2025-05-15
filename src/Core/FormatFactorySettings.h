@@ -180,13 +180,26 @@ When reading Parquet files, skip whole row groups based on the WHERE expressions
 Use native parquet reader v1. It's relatively fast but unfinished.
 )", 0) \
 DECLARE(Bool, input_format_parquet_use_native_reader_v2, false, R"(
-    A new parquet reader support full filter push down.
+A new parquet reader support full filter push down.
 )", 0) \
     DECLARE(Bool, input_format_parquet_use_native_reader_v3, false, R"(
 Use Parquet reader v3.
 )", 0) \
     DECLARE(UInt64, input_format_parquet_memory_usage_target, 4ul << 30, R"(
 Approximate memory usage limit for Parquet reader v3. Determines how many row groups or columns can be read in parallel. Memory usage doesn't get smaller than one row group. When reading multiple files in one query, the limit is on total memory usage across those files.
+)", 0) \
+    /* TODO: Enable these 3 settings by default when the features are implemented. */ \
+    DECLARE(Bool, input_format_parquet_page_filter_push_down, false, R"(
+Skip pages using min/max values from column index.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_use_offset_index, false, R"(
+Minor tweak to how pages are read from parquet file when no page filtering is used.
+)", 0) \
+    DECLARE(UInt64, input_format_parquet_dictionary_filter_limit_bytes, 0, R"(
+If a column chunk is fully dictionary-encoded, and the dictionary is smaller than this, use the dictionary for filtering, similar to bloom filter.
+)", 0) \
+    DECLARE(Bool, input_format_parquet_fuzz, true, R"(
+Randomize various decisions in parquet reader, for testing.
 )", 0) \
     DECLARE(Bool, input_format_allow_seeks, true, R"(
 Allow seeks while reading in ORC/Parquet/Arrow input formats.
