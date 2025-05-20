@@ -1274,7 +1274,7 @@ void registerInputFormatParquet(FormatFactory & factory)
                 size_t min_bytes_for_seek = is_remote_fs ? read_settings.remote_read_min_bytes_for_seek : settings.parquet.local_read_min_bytes_for_seek;
                 if (settings.parquet.use_native_reader_v3)
                 {
-                    //TODO: actually share the shared pool, fill out its fields using settings
+                    /// TODO [parquet]: Actually share the shared pool.
                     auto pool = std::make_shared<Parquet::SharedParsingThreadPool>();
                     if (settings.parquet.enable_row_group_prefetch && max_download_threads > 0)
                         pool->io_runner.initThreadPool(
@@ -1293,7 +1293,8 @@ void registerInputFormatParquet(FormatFactory & factory)
                         pool->parsing_runner.initThreadPool(
                             getFormatParsingThreadPool().get(), max_parsing_threads, "ParquetDecoder", CurrentThread::getGroup());
 
-                    pool->total_memory_target = settings.parquet.memory_target;
+                    pool->total_memory_low_watermark = settings.parquet.memory_low_watermark;
+                    pool->total_memory_high_watermark = settings.parquet.memory_high_watermark;
                     return std::make_shared<ParquetMk4BlockInputFormat>(
                         buf,
                         sample,
