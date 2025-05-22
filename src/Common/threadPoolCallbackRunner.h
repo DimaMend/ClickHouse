@@ -224,4 +224,78 @@ public:
 
 };
 
+
+/// Has a task queue and a set of threads from ThreadPool.
+/// Per-task overhead is lower than in ThreadPool because ThreadGroup is not switched, stack trace is
+/// not propagated, etc.
+/// ThreadPool is ok for maybe thousands of tasks per second.
+/// ThreadPoolCallbackRunnerFast is ok for maybe tens of thousands.
+/// (For hundreds of thousands you'd want a faster queue and some tricks to avoid doing FUTEX_WAKE a lot.
+///  But more importantly you'd want to reconsider the design to avoid having such small tasks.)
+class ThreadPoolCallbackRunnerFast
+{
+public:
+    enum class Mode
+    {
+        /// Normal mode, tasks are queued and ran by a thread pool.
+        ThreadPool,
+        /// Tasks can be enqueued, but there's no thread pool to pick them up.
+        /// You have to call runTaskInline() to run them.
+        Manual,
+        /// operator() will throw.
+        Disabled,
+    };
+
+    /// TODO [parquet]: Add metric for queue size and maybe event for task count.
+
+    ThreadPoolCallbackRunnerFast();
+
+    void initManual()
+    {
+        mode = Mode::Manual;
+    }
+
+    void initThreadPool(ThreadPool & pool_, size_t max_threads_, std::string thread_name_, ThreadGroupPtr thread_group_);
+
+    /// Manual or Disabled.
+    explicit ThreadPoolCallbackRunnerFast(Mode mode_);
+
+    ~ThreadPoolCallbackRunnerFast();
+
+    void shutdown();
+
+    void operator()(std::function<void()> f);
+
+    void bulkSchedule(std::vector<std::function<void()>> fs);
+
+    /// Returns true if a task was run, false if queue is empty.
+    bool runTaskInline();
+
+    Mode getMode() const { return mode; }
+    size_t getMaxThreads() const { return mode == Mode::ThreadPool ? max_threads : 0; }
+    bool isDisabled() const { return mode == Mode::Disabled; }
+    bool isManual() const { return mode == Mode::Manual; }
+
+private:
+    Mode mode = Mode::Disabled;
+    ThreadPool * pool = nullptr;
+    size_t max_threads = 0;
+    std::string thread_name;
+    ThreadGroupPtr thread_group;
+
+    std::mutex mutex;
+    size_t threads = 0;
+    bool shutdown_requested = false;
+    std::condition_variable shutdown_cv;
+
+    std::deque<std::function<void()>> queue;
+    std::condition_variable queue_cv;
+
+    void threadFunction();
+};
+
+
+extern template ThreadPoolCallbackRunnerUnsafe<void> threadPoolCallbackRunnerUnsafe<void>(ThreadPool &, const std::string &);
+extern template class ThreadPoolCallbackRunnerLocal<void>;
+
 }
