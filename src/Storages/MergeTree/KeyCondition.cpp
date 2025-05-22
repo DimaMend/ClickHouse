@@ -940,6 +940,7 @@ KeyCondition::KeyCondition(
 
     has_filter = true;
 
+    column_filter_helper = std::make_shared<ColumnFilterHelper>(*filter_dag.dag);
     RPNBuilder<RPNElement> builder(filter_dag.predicate, context, [&](const RPNBuilderTreeNode & node, RPNElement & out)
     {
         return extractAtomFromTree(node, out);

@@ -1027,7 +1027,12 @@ The server successfully detected this situation and will download merged part fr
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
-
+    M(ParquetDecompressionTimeMicroseconds, "Time spent decompressing Parquet page data", ValueType::Microseconds) \
+    M(ParquetDeserializingMetaTimeMicroseconds, "Time spent deserializing Parquet page headers and other metadata", ValueType::Microseconds) \
+    M(ParquetFilteredRows, "Rows considered by push down filters, including skipped rows", ValueType::Number) \
+    M(ParquetSkippedRows, "Rows skipped by push down filters", ValueType::Number) \
+    M(ParquetOutputRows, "Parquet output rows", ValueType::Number) \
+    M(ParquetSkipPageNum, "Parquet pages skipped", ValueType::Number) \
 
 #ifdef APPLY_FOR_EXTERNAL_EVENTS
     #define APPLY_FOR_EVENTS(M) APPLY_FOR_BUILTIN_EVENTS(M) APPLY_FOR_EXTERNAL_EVENTS(M)
