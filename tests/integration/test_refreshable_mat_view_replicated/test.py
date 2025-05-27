@@ -401,7 +401,6 @@ def test_real_wait_refresh(
         empty=empty,
     )
     node.query(create_sql)
-    rmv = get_rmv_info(node, "test_rmv")
     time.sleep(1)
     node.query("SYSTEM SYNC DATABASE REPLICA ON CLUSTER default default")
 
