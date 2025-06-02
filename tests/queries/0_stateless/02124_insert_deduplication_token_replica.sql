@@ -16,6 +16,7 @@ SELECT * FROM insert_dedup_token1 ORDER BY id;
 SYSTEM FLUSH LOGS system.part_log;
 SELECT DISTINCT exception FROM system.part_log
 WHERE table = 'insert_dedup_token1'
+  AND database = currentDatabase()
   AND event_type = 'NewPart'
   AND error = 389;
 
