@@ -15,6 +15,7 @@ namespace DB
 {
 
 class Context;
+class ASTInsertQuery;
 
 /** Interface for table functions.
   *
@@ -79,6 +80,10 @@ public:
     virtual bool supportsReadingSubsetOfColumns(const ContextPtr &) { return true; }
 
     virtual bool canBeUsedToCreateTable() const { return true; }
+
+    // INSERT INTO TABLE FUNCTION ... PARTITION BY
+    // Set partition by expression so `ITableFunctionObjectStorage` can construct a proper representation
+    virtual void setPartitionBy(const ASTPtr & /**/) {}
 
     /// Create storage according to the query.
     StoragePtr
