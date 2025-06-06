@@ -170,6 +170,7 @@ REGISTER_FUNCTION(FlipCoordinates)
          "SELECT flipCoordinates([[(1.0, 2.0), (3.0, 4.0)], [(5.0, 6.0), (7.0, 8.0)]]);",
          "[[(2.0, 1.0), (4.0, 3.0)], [(6.0, 5.0), (8.0, 7.0)]]"}
     };
+    FunctionDocumentation::IntroducedIn introduced_in = {25, 6};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
 
     FunctionDocumentation function_documentation = {
@@ -177,6 +178,7 @@ REGISTER_FUNCTION(FlipCoordinates)
         .syntax = syntax,
         .arguments = arguments,
         .returned_value = returned_value,
+        .introduced_in = introduced_in,
         .examples = examples,
         .category = category
     };
