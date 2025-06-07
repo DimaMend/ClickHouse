@@ -1,3 +1,4 @@
+#include "Common/Exception.h"
 #include "Disks/ObjectStorages/StoredObject.h"
 #include "config.h"
 
@@ -22,6 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 
 #include <Common/logger_useful.h>
@@ -113,7 +115,6 @@ readJSON(const String & metadata_file_path, ObjectStoragePtr object_storage, con
 
 
 }
-
 
 IcebergMetadata::IcebergMetadata(
     ObjectStoragePtr object_storage_,
@@ -457,6 +458,7 @@ bool IcebergMetadata::update(const ContextPtr & local_context)
     if (previous_snapshot_id != relevant_snapshot_id)
     {
         cached_unprunned_files_for_last_processed_snapshot = std::nullopt;
+        cached_unprunned_position_deletes_files_for_last_processed_snapshot = std::nullopt;
         return true;
     }
     return previous_snapshot_schema_id != relevant_snapshot_schema_id;
@@ -641,10 +643,9 @@ void IcebergMetadata::initializeDataFiles(ManifestListPtr manifest_list_ptr) con
 {
     for (const auto & manifest_file_content : *manifest_list_ptr)
     {
-        for (const auto & data_file_path : manifest_file_content->getFiles())
+        for (const auto & data_file_path : manifest_file_content->getFiles(FileContentType::DATA))
         {
-            if (std::holds_alternative<DataFileEntry>(data_file_path.file))
-                manifest_file_by_data_file.emplace(std::get<DataFileEntry>(data_file_path.file).file_name, manifest_file_content);
+            manifest_file_by_data_file.emplace(data_file_path.file_name, manifest_file_content);
         }
     }
 }
@@ -814,44 +815,56 @@ ManifestFilePtr IcebergMetadata::getManifestFile(const String & filename, Int64 
     return create_fn();
 }
 
-Strings IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
+std::vector<Iceberg::ManifestFileEntry>
+IcebergMetadata::getFilesImpl(const ActionsDAG * filter_dag, FileContentType file_content_type) const
 {
     if (!relevant_snapshot)
         return {};
-
+    std::optional<std::vector<Iceberg::ManifestFileEntry>> & cached_files = (file_content_type == FileContentType::DATA)
+        ? cached_unprunned_files_for_last_processed_snapshot
+        : cached_unprunned_position_deletes_files_for_last_processed_snapshot;
     bool use_partition_pruning = filter_dag && getContext()->getSettingsRef()[Setting::use_iceberg_partition_pruning];
+    if (!use_partition_pruning && cached_files.has_value())
+        return cached_files.value();
 
-    if (!use_partition_pruning && cached_unprunned_files_for_last_processed_snapshot.has_value())
-        return cached_unprunned_files_for_last_processed_snapshot.value();
-
-    Strings data_files;
+    std::vector<Iceberg::ManifestFileEntry> files;
     for (const auto & manifest_file_ptr : *(relevant_snapshot->manifest_list))
     {
         ManifestFilesPruner pruner(
-            schema_processor, relevant_snapshot_schema_id,
-            use_partition_pruning ? filter_dag : nullptr,
-            *manifest_file_ptr, getContext());
-        const auto & data_files_in_manifest = manifest_file_ptr->getFiles();
-        for (const auto & manifest_file_entry : data_files_in_manifest)
+            schema_processor, relevant_snapshot_schema_id, use_partition_pruning ? filter_dag : nullptr, *manifest_file_ptr, getContext());
+        const auto & files_in_manifest = manifest_file_ptr->getFiles(file_content_type);
+        for (const auto & manifest_file_entry : files_in_manifest)
         {
             if (manifest_file_entry.status != ManifestEntryStatus::DELETED)
             {
                 if (!pruner.canBePruned(manifest_file_entry))
                 {
-                    if (std::holds_alternative<DataFileEntry>(manifest_file_entry.file))
-                        data_files.push_back(std::get<DataFileEntry>(manifest_file_entry.file).file_name);
+                    files.push_back(manifest_file_entry);
                 }
             }
         }
     }
 
+    std::sort(files.begin(), files.end());
+
     if (!use_partition_pruning)
     {
-        cached_unprunned_files_for_last_processed_snapshot = data_files;
-        return cached_unprunned_files_for_last_processed_snapshot.value();
+        cached_files = files;
+        return cached_files.value();
     }
 
-    return data_files;
+    return files;
+}
+
+
+std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getDataFiles(const ActionsDAG * filter_dag) const
+{
+    return getFilesImpl(filter_dag, FileContentType::DATA);
+}
+
+std::vector<Iceberg::ManifestFileEntry> IcebergMetadata::getPositionalDeleteFiles(const ActionsDAG * filter_dag) const
+{
+    return getFilesImpl(filter_dag, FileContentType::POSITIONAL_DELETE);
 }
 
 std::optional<size_t> IcebergMetadata::totalRows() const
@@ -921,9 +934,105 @@ ObjectIterator IcebergMetadata::iterate(
     FileProgressCallback callback,
     size_t /* list_batch_size */) const
 {
-    return createKeysIterator(getDataFiles(filter_dag), object_storage, callback);
+    /*There is no need to prune positional delete files because we will anyway read only files which correspond to data files partitioning (and they are already prunned).*/
+    return std::make_shared<IcebergKeysIterator>(
+        *this, getDataFiles(filter_dag), getPositionalDeleteFiles(nullptr), object_storage, callback);
 }
 
+bool IcebergMetadata::hasDataTransformer(const ObjectInfoPtr & object_info) const
+{
+    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    if (!iceberg_object_info)
+        return false;
+
+    return !iceberg_object_info->position_deletes_objects.empty();
+}
+
+std::shared_ptr<ISimpleTransform> IcebergMetadata::getDataTransformer(
+    const ObjectInfoPtr & object_info,
+    const Block & header,
+    const std::optional<FormatSettings> & format_settings,
+    ContextPtr context_) const
+{
+    auto iceberg_object_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    if (!iceberg_object_info)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "The object info is not IcebergDataObjectInfo");
+
+    auto configuration_ptr = configuration.lock();
+    if (!configuration_ptr)
+    {
+        throw DB::Exception(ErrorCodes::LOGICAL_ERROR, "Iceberg configuration has expired");
+    }
+
+    String delete_object_format = configuration_ptr->format;
+    String delete_object_compression_method = configuration_ptr->compression_method;
+
+    return std::make_shared<IcebergBitmapPositionDeleteTransform>(
+        header, iceberg_object_info, object_storage, format_settings, context_, delete_object_format, delete_object_compression_method);
+}
+
+
+IcebergDataObjectInfo::IcebergDataObjectInfo(
+    const IcebergMetadata & iceberg_metadata,
+    Iceberg::ManifestFileEntry data_object_,
+    std::optional<ObjectMetadata> metadata_,
+    const std::vector<Iceberg::ManifestFileEntry> & position_deletes_objects_)
+    : RelativePathWithMetadata(data_object_.file_name, std::move(metadata_))
+    , data_object(data_object_)
+{
+    auto beg_it = std::lower_bound(position_deletes_objects_.begin(), position_deletes_objects_.end(), data_object_);
+    auto end_it = std::upper_bound(
+        position_deletes_objects_.begin(),
+        position_deletes_objects_.end(),
+        data_object_,
+        [](const Iceberg::ManifestFileEntry & lhs, const Iceberg::ManifestFileEntry & rhs)
+        {
+            return std::tie(lhs.common_partition_specification, lhs.partition_key_value)
+                < std::tie(rhs.common_partition_specification, rhs.partition_key_value);
+        });
+    position_deletes_objects = std::span<const Iceberg::ManifestFileEntry>{beg_it, end_it};
+    if (!position_deletes_objects.empty() && iceberg_metadata.configuration.lock()->format != "Parquet")
+    {
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_METHOD,
+            "Position deletes are only supported for data files of Parquet format in Iceberg, but got {}",
+            iceberg_metadata.configuration.lock()->format);
+    }
+};
+
+IcebergKeysIterator::IcebergKeysIterator(
+    const IcebergMetadata & iceberg_metadata_,
+    std::vector<Iceberg::ManifestFileEntry> && data_files_,
+    std::vector<Iceberg::ManifestFileEntry> && position_deletes_files_,
+    ObjectStoragePtr object_storage_,
+    IDataLakeMetadata::FileProgressCallback callback_)
+    : iceberg_metadata(iceberg_metadata_)
+    , data_files(data_files_)
+    , position_deletes_files(position_deletes_files_)
+    , object_storage(object_storage_)
+    , callback(callback_)
+{
+}
+
+
+ObjectInfoPtr IcebergKeysIterator::next(size_t)
+{
+    while (true)
+    {
+        size_t current_index = index.fetch_add(1, std::memory_order_relaxed);
+        if (current_index >= data_files.size())
+            return nullptr;
+
+        auto key = data_files[current_index].file_name;
+        auto object_metadata = object_storage->getObjectMetadata(key);
+
+        if (callback)
+            callback(FileProgress(0, object_metadata.size_bytes));
+
+        return std::make_shared<IcebergDataObjectInfo>(
+            iceberg_metadata, data_files[current_index], std::move(object_metadata), position_deletes_files);
+    }
+}
 }
 
 #endif
