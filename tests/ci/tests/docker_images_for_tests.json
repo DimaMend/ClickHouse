@@ -95,7 +95,7 @@
         "dependent": []
     },
     "docker/test/integration/arrowflight": {
-        "name": "clickhouse/arrowflight",
+        "name": "clickhouse/arrowflight-server-test",
         "dependent": []
     },
     "docker/test/integration/mysql_php_client": {
