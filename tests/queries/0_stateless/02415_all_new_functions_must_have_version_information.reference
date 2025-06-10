@@ -829,20 +829,16 @@ toModifiedJulianDayOrNull
 toMonth
 toNullable
 toQuarter
-toRelativeDayNum
-toRelativeHourNum
-toRelativeMinuteNum
-toRelativeMonthNum
-toRelativeQuarterNum
-toRelativeSecondNum
-toRelativeWeekNum
-toRelativeYearNum
 toSecond
 toStartOfDay
 toStartOfFifteenMinutes
 toStartOfFiveMinutes
 toStartOfHour
+<<<<<<< HEAD
+toStartOfISOYear
+=======
 toStartOfInterval
+>>>>>>> 83b3f837cc83e092f5ca18305c0fe7628f42c048
 toStartOfMicrosecond
 toStartOfMillisecond
 toStartOfMinute
@@ -852,7 +848,6 @@ toStartOfTenMinutes
 toStartOfWeek
 toString
 toStringCutToZero
-toTime
 toTimezone
 toTypeName
 toUInt128
