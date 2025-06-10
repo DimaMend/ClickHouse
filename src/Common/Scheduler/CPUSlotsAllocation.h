@@ -22,7 +22,17 @@ class CPUSlotsAllocation;
 class CPUSlotRequest final : public ResourceRequest
 {
 public:
-    CPUSlotRequest() = default;
+    CPUSlotRequest()
+        // 1 second is a fixed cost of a CPU slot used without preemption (it does not depend on real consumption)
+        // The only purpose of this value is to ensure that during transition to/from `cpu_slot_preemption` mode,
+        // when preemptibale and non-preemptible slots are mixed, the request cost is reasonable enough.
+        : ResourceRequest(1'000'000'000)
+    {
+        // Ignore throttling for this request, because cost has no meaning in this case
+        // This disables `max_cpus` and `max_burst_cpu_seconds` throttling for non-preemptible CPU slots
+        ignore_throttling = true;
+    }
+
     ~CPUSlotRequest() override = default;
 
     /// Callback to trigger resource consumption.
@@ -68,15 +78,15 @@ public:
     [[nodiscard]] AcquiredSlotPtr acquire() override;
 
     // For tests only. Returns true iff resource request is enqueued in the scheduler
-    bool isRequesting() const;
+    bool isRequesting() const override;
 
 private:
-    friend class CPUSlotRequest; // for schedule() and failed()
+    friend class CPUSlotRequest; // for grant() and failed()
 
     // Resource request failed
     void failed(const std::exception_ptr & ptr);
 
-    // Enqueue resource request if necessary
+    // Grant a slot and enqueue another resource request if necessary
     void grant();
 
     // Returns the queue for the current request
