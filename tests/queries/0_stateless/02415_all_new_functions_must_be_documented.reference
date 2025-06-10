@@ -657,17 +657,7 @@ toRelativeWeekNum
 toRelativeYearNum
 toSecond
 toStartOfDay
-toStartOfFifteenMinutes
-toStartOfFiveMinutes
-toStartOfHour
 toStartOfInterval
-toStartOfMicrosecond
-toStartOfMillisecond
-toStartOfMinute
-toStartOfNanosecond
-toStartOfSecond
-toStartOfTenMinutes
-toStartOfWeek
 toString
 toStringCutToZero
 toTime
