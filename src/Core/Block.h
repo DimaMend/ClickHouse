@@ -4,10 +4,11 @@
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/NamesAndTypes.h>
+#include <Common/StringHashForHeterogeneousLookup.h>
 
+#include <absl/container/flat_hash_map.h>
 #include <initializer_list>
 #include <vector>
-#include <Common/StringHashForHeterogeneousLookup.h>
 
 
 class SipHash;
@@ -31,7 +32,7 @@ class Block
 {
 private:
     using Container = ColumnsWithTypeAndName;
-    using IndexByName = std::unordered_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
+    using IndexByName = absl::flat_hash_map<String, size_t, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal>;
 
     Container data;
     IndexByName index_by_name;
@@ -181,7 +182,6 @@ public:
     void updateHash(SipHash & hash) const;
 
 private:
-    void eraseImpl(size_t position);
     void initializeIndexByName();
     void reserve(size_t count);
 
