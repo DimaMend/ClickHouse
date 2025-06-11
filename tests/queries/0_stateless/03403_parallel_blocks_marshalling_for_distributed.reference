@@ -1,0 +1,32 @@
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+      ReadFromRemoteParallelReplicas
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t)
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t)
+Union
+  Expression ((Project names + (Projection + Change column names to column identifiers)))
+    ReadFromMergeTree (default.t)
+  Expression (Project names)
+    ReadFromRemoteParallelReplicas
+      Expression ((Projection + Change column names to column identifiers))
+        ReadFromMergeTree (default.t)
+      Expression ((Projection + Change column names to column identifiers))
+        ReadFromMergeTree (default.t)
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.t)
+      ReadFromRemote (Read from remote replica)
+        Aggregating
+          Expression ((Before GROUP BY + Change column names to column identifiers))
+            ReadFromMergeTree (default.t)
