@@ -89,9 +89,11 @@ public:
     }
 
 private:
-    void onRemoveOverflowWeightLoss(size_t weight_loss) override
+    /// Called for each individual cell being evicted from cache
+    void onValueRemoval(const MappedPtr & mappedPtr) override
     {
-        ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, weight_loss);
+        auto vector_similarity_index_cache_cell = std::static_pointer_cast<VectorSimilarityIndexCacheCell>(mappedPtr);
+        ProfileEvents::increment(ProfileEvents::VectorSimilarityIndexCacheWeightLost, VectorSimilarityIndexCacheWeightFunction()(*vector_similarity_index_cache_cell));
     }
 };
 
