@@ -6,6 +6,7 @@
 #include <Interpreters/Cache/FileCache.h>
 #include <IO/BoundedReadBuffer.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/SwapHelper.h>
 #include <Interpreters/Context.h>
 #include <base/hex.h>
 #include <base/scope_guard.h>
@@ -695,7 +696,7 @@ void CachedOnDiskReadBufferFromFile::predownload(FileSegment & file_segment)
                 file_segment.completePartAndResetDownloader();
                 chassert(file_segment.state() == FileSegment::State::PARTIALLY_DOWNLOADED_NO_CONTINUATION);
 
-                LOG_TEST(log, "Bypassing cache because for {}", file_segment.getInfoForLog());
+                LOG_TEST(log, "Bypassing cache for {}", file_segment.getInfoForLog());
 
                 read_type = ReadType::REMOTE_FS_READ_BYPASS_CACHE;
 
@@ -832,6 +833,10 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         return false;
 
     const size_t original_buffer_size = internal_buffer.size();
+    if (!original_buffer_size)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Internal buffer cannot be empty (use external buffer: {}; {})", use_external_buffer, getInfoForLog());
 
     bool implementation_buffer_can_be_reused = false;
     SCOPE_EXIT({
@@ -840,6 +845,12 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
             /// Save state of current file segment before it is completed. But we'll use it only if exception happened.
             if (std::uncaught_exceptions() > 0)
                 nextimpl_step_log_info = getInfoForLog();
+
+            if (!use_external_buffer)
+            {
+                chassert(!internal_buffer.empty());
+                chassert(internal_buffer.begin());
+            }
 
             if (file_segments->empty())
                 return;
@@ -859,7 +870,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                 }
             }
 
-            if (use_external_buffer && !internal_buffer.empty())
+            if (!internal_buffer.empty())
                 internal_buffer.resize(original_buffer_size);
 
             chassert(!file_segment.isDownloader());
@@ -884,8 +895,6 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
         file_segments->front().increasePriority();
     }
 
-    chassert(!internal_buffer.empty());
-
     auto & file_segment = file_segments->front();
     const auto & current_read_range = file_segment.range();
 
@@ -893,7 +902,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     {
         /// We allocate buffers not less than 1M so that s3 requests will not be too small. But the same buffers (members of AsynchronousReadIndirectBufferFromRemoteFS)
         /// are used for reading from files. Some of these readings are fairly small and their performance degrade when we use big buffers (up to ~20% for queries like Q23 from ClickBench).
-        if (settings.local_fs_buffer_size < internal_buffer.size())
+        if (settings.local_fs_buffer_size && settings.local_fs_buffer_size < internal_buffer.size())
             internal_buffer.resize(settings.local_fs_buffer_size);
 
         /// It would make sense to reduce buffer size to what is left to read (when we read the last segment) regardless of the read_type.
@@ -912,7 +921,8 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
     // We then take it back with another swap() after reading is done.
     // (If we get an exception in between, we'll be left with an invalid internal_buffer. That's ok, as long as
     // the caller doesn't try to use this CachedOnDiskReadBufferFromFile after it threw an exception.)
-    swap(*implementation_buffer);
+    std::optional<SwapHelper> swap;
+    swap.emplace(*this, *implementation_buffer);
 
     LOG_TEST(
         log,
@@ -1076,7 +1086,7 @@ bool CachedOnDiskReadBufferFromFile::nextImplStep()
                         file_offset_of_buffer_end, read_until_position, size, current_read_range.toString(), file_segments->size(), file_segments->toString(true)));
     }
 
-    swap(*implementation_buffer);
+    swap.reset();
 
     current_file_segment_counters.increment(ProfileEvents::FileSegmentUsedBytes, available());
 
