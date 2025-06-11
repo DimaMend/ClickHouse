@@ -165,6 +165,7 @@ Block::Block(ColumnsWithTypeAndName && data_) : data{std::move(data_)}
 
 void Block::initializeIndexByName()
 {
+    index_by_name.reserve(data.size());
     for (size_t i = 0, size = data.size(); i < size; ++i)
         index_by_name.emplace(data[i].name, i);
 }
@@ -241,24 +242,14 @@ void Block::erase(size_t position)
         throw Exception(ErrorCodes::POSITION_OUT_OF_BOUND, "Position out of bound in Block::erase(), max position = {}",
             data.size() - 1);
 
-    eraseImpl(position);
-}
-
-
-void Block::eraseImpl(size_t position)
-{
     data.erase(data.begin() + position);
 
-    for (auto it = index_by_name.begin(); it != index_by_name.end();)
+    for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
     {
         if (it->second == position)
-            it = index_by_name.erase(it);
-        else
-        {
-            if (it->second > position)
-                --it->second;
-            ++it;
-        }
+            index_by_name.erase(it);
+        else if (it->second > position)
+            --it->second;
     }
 }
 
@@ -269,7 +260,18 @@ void Block::erase(const String & name)
     if (index_it == index_by_name.end())
         throw Exception(ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK, "No such name in Block::erase(): '{}'", name);
 
-    eraseImpl(index_it->second);
+    auto position = index_it->second;
+    if (position < data.size() - 2)
+    {
+        for (auto it = index_by_name.begin(); it != index_by_name.end(); ++it)
+        {
+            if (it->second > position)
+                --it->second;
+        }
+    }
+
+    index_by_name.erase(index_it);
+    data.erase(data.begin() + position);
 }
 
 
@@ -609,8 +611,6 @@ Block Block::cloneWithColumns(MutableColumns && columns) const
 
 Block Block::cloneWithColumns(const Columns & columns) const
 {
-    Block res;
-
     size_t num_columns = data.size();
 
     if (num_columns != columns.size())
@@ -623,12 +623,12 @@ Block Block::cloneWithColumns(const Columns & columns) const
             columns.size(), fmt::join(columns | dump_columns, ", "));
     }
 
-    res.reserve(num_columns);
+    ColumnsWithTypeAndName cols;
+    cols.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; i++)
+        cols.emplace_back(columns[i], data[i].type, data[i].name);
 
-    for (size_t i = 0; i < num_columns; ++i)
-        res.insert({ columns[i], data[i].type, data[i].name });
-
-    return res;
+    return Block(std::move(cols));
 }
 
 
