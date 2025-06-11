@@ -135,8 +135,6 @@ cutQueryString
 cutQueryStringAndFragment
 cutURLParameter
 cutWWW
-dateDiff
-dateName
 dateTime64ToSnowflake
 dateTimeToSnowflake
 dateTrunc
@@ -187,17 +185,12 @@ firstSignificantSubdomainCustomRFC
 flattenTuple
 floor
 format
-formatDateTime
-formatDateTimeInJodaSyntax
 formatReadableQuantity
 formatReadableSize
 formatReadableTimeDelta
 formatRow
 formatRowNoNewline
 fragment
-fromModifiedJulianDay
-fromModifiedJulianDayOrNull
-fromUTCTimestamp
 fromUnixTimestamp
 fromUnixTimestamp64Micro
 fromUnixTimestamp64Milli
@@ -300,7 +293,6 @@ metroHash64
 minSampleSizeContinuous
 minSampleSizeConversion
 moduloLegacy
-monthName
 multiFuzzyMatchAllIndices
 multiFuzzyMatchAny
 multiFuzzyMatchAnyIndex
@@ -361,9 +353,6 @@ notInIgnoreSet
 notLike
 notNullIn
 notNullInIgnoreSet
-now
-now64
-nowInBlock
 nullIf
 nullIn
 nullInIgnoreSet
@@ -541,8 +530,6 @@ tcpPort
 tgamma
 throwIf
 tid
-timeSlot
-timeSlots
 timezoneOf
 timezoneOffset
 toBool
@@ -642,8 +629,6 @@ toJSONString
 toLastDayOfWeek
 toLowCardinality
 toMinute
-toModifiedJulianDay
-toModifiedJulianDayOrNull
 toMonth
 toNullable
 toQuarter
@@ -696,7 +681,6 @@ toUInt8
 toUInt8OrDefault
 toUInt8OrNull
 toUInt8OrZero
-toUTCTimestamp
 toUUID
 toUUIDOrDefault
 toUUIDOrNull
@@ -707,9 +691,6 @@ toUnixTimestamp64Nano
 toUnixTimestamp64Second
 toValidUTF8
 toWeek
-toYYYYMM
-toYYYYMMDD
-toYYYYMMDDhhmmss
 toYear
 toYearWeek
 today
@@ -769,5 +750,4 @@ wyHash64
 xor
 xxHash32
 xxHash64
-yesterday
 zookeeperSessionUptime
