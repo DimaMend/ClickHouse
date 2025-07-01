@@ -1,0 +1,33 @@
+name: Mend AI
+
+on: workflow_dispatch
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Mend CLI Scan
+      env:
+        MEND_EMAIL: ${{secrets.MEND_EMAIL}}
+        MEND_USER_KEY: ${{secrets.MEND_USER_KEY}}
+        MEND_URL: https://saas.mend.io
+        MEND_LOG_LEVEL: DEBUG
+        MEND_SCA_TIMEOUT_UNIFIED_AGENT: 1440
+        MEND_SCA_TIMEOUT_PSB: 1440
+        MEND_SCA_TIMEOUT_CLI: 1440
+        MEND_SCA_SCAN_TIMEOUT: 1440
+        MEND_SCA_LOG_LEVEL: trace
+      run: |
+        echo Downloading Mend CLI
+        curl https://downloads.mend.io/cli/linux_amd64/mend -o /usr/local/bin/mend && chmod +x /usr/local/bin/mend
+        echo run Mend scan
+        mend dep -u -s "*//CLI//ClickHouse"
+        
+    - name: 'Upload .mend/logs folder'
+      uses: actions/upload-artifact@v4
+      with:
+        name: Mend logs
+        path: /home/runner/.mend/logs/
+        retention-days: 1
